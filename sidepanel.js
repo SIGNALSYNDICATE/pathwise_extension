@@ -1,7 +1,3 @@
-const DASHBOARD_URL = 'https://job-dash-ashy.vercel.app';
-// Local demos: 'http://localhost:3000'. After deploy, switch this to DASHBOARD_URL.
-const API_BASE = 'http://localhost:3000';
-
 // Supabase initialization
 const SUPABASE_URL = 'https://aofvzgqksbhgljzowyby.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvZnZ6Z3Frc2JoZ2xqem93eWJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ0MzAxMTEsImV4cCI6MjA3MDAwNjExMX0.XA4xgMqrMy9finlY9xvOhPdrQIsKYlRGmrNx_1D6db4';
@@ -11,6 +7,8 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const authContainer = document.getElementById('authContainer');
 const loginPage = document.getElementById('loginPage');
 const signupPage = document.getElementById('signupPage');
+const consentPage = document.getElementById('consentPage');
+const rolesPage = document.getElementById('rolesPage');
 const loginForm = document.getElementById('loginForm');
 const signupForm = document.getElementById('signupForm');
 const showSignUp = document.getElementById('showSignUp');
@@ -45,9 +43,12 @@ const successRate = document.getElementById('successRate');
 const OFFLINE_QUEUE_KEY = 'offline_job_queue';
 const LOCAL_JOBS_KEY = 'local_jobs';
 const SESSION_KEY = 'supabase_session';
+const ONBOARDING_KEY = 'onboarding_state';
 
 // Global variables
 let currentJobs = [];
+let selectedRoles = [];
+let savedResumeData = null;
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
@@ -59,44 +60,31 @@ async function initializeApp() {
   setupJobEventListeners();
   setupTabNavigation();
   setupFileUpload();
+  setupSavedResumeSelect();
   setupSlider();
   setupFilter();
+  setupOnboarding();
   await checkAuthState();
 }
 
 function setupTabNavigation() {
-  // Set initial active section
   document.querySelectorAll('.content-section').forEach(section => {
     section.classList.remove('active');
   });
   jobSection.classList.add('active');
 
-  jobTab.addEventListener('click', () => {
-    switchTab('jobTab');
-  });
-
-  followUpTab.addEventListener('click', () => {
-    switchTab('followUpTab');
-  });
-
-  analyticsTab.addEventListener('click', () => {
-    switchTab('analyticsTab');
-  });
+  jobTab.addEventListener('click', () => switchTab('jobTab'));
+  followUpTab.addEventListener('click', () => switchTab('followUpTab'));
+  analyticsTab.addEventListener('click', () => switchTab('analyticsTab'));
 }
 
 function switchTab(activeTabId) {
-  // Update tabs
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.classList.remove('active-tab');
-  });
+  document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active-tab'));
   document.getElementById(activeTabId).classList.add('active-tab');
 
-  // Update sections
-  document.querySelectorAll('.content-section').forEach(section => {
-    section.classList.remove('active');
-  });
+  document.querySelectorAll('.content-section').forEach(section => section.classList.remove('active'));
 
-  switch(activeTabId) {
+  switch (activeTabId) {
     case 'jobTab':
       jobSection.classList.add('active');
       break;
@@ -113,7 +101,7 @@ function switchTab(activeTabId) {
 function setupSlider() {
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('date').value = today;
-  
+
   const slider = document.getElementById('expectationSlider');
   const valueDisplay = document.getElementById('expectationValue');
 
@@ -200,6 +188,11 @@ function getInitials(email) {
 async function checkAuthState() {
   const session = await getSession();
   if (session) {
+    const onboardingDone = await isOnboardingComplete(session.user.id);
+    if (!onboardingDone) {
+      beginOnboarding(session.user.id);
+      return;
+    }
     showAppContent();
     updateProfileSection(session.user.email);
     await renderAll();
@@ -208,12 +201,17 @@ async function checkAuthState() {
     updateProfileSection(null);
   }
 
-  supabase.auth.onAuthStateChange((event, session) => {
+  supabase.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN') {
       storeSession(session);
-      showAppContent();
-      updateProfileSection(session.user.email);
-      renderAll();
+      const onboardingDone = await isOnboardingComplete(session.user.id);
+      if (!onboardingDone) {
+        beginOnboarding(session.user.id);
+      } else {
+        showAppContent();
+        updateProfileSection(session.user.email);
+        renderAll();
+      }
     } else if (event === 'SIGNED_OUT') {
       clearSession();
       updateProfileSection(null);
@@ -244,9 +242,14 @@ function setupAuthEventListeners() {
       alert('Login failed: ' + error.message);
     } else {
       storeSession(data.session);
-      showAppContent();
       updateProfileSection(data.user.email);
-      await renderAll();
+      const onboardingDone = await isOnboardingComplete(data.user.id);
+      if (!onboardingDone) {
+        beginOnboarding(data.user.id);
+      } else {
+        showAppContent();
+        await renderAll();
+      }
     }
   });
 
@@ -257,13 +260,11 @@ function setupAuthEventListeners() {
     const confirmPassword = document.getElementById('confirmPassword').value;
     const agreeTerms = document.getElementById('agreeTerms').checked;
 
-    // Validate password match
     if (password !== confirmPassword) {
       alert('Passwords do not match!');
       return;
     }
 
-    // Validate terms agreement
     if (!agreeTerms) {
       alert('Please agree to the Terms of Service and Privacy Policy');
       return;
@@ -275,9 +276,8 @@ function setupAuthEventListeners() {
       alert('Signup failed: ' + error.message);
     } else {
       storeSession(data.session);
-      showAppContent();
       updateProfileSection(data.user.email);
-      await renderAll();
+      beginOnboarding(data.user.id);
     }
   });
 
@@ -288,14 +288,16 @@ function setupAuthEventListeners() {
   });
 
   document.getElementById('openAppBtn').addEventListener('click', () => {
-    window.open(`${DASHBOARD_URL}/`, '_blank');
+    window.open('https://job-dash-ashy.vercel.app/', '_blank');
   });
 
-  matchesStat?.addEventListener('click', () => {
-    window.open(`${API_BASE}/dashboard/recommendations`, '_blank');
-  });
+  if (matchesStat) {
+    matchesStat.addEventListener('click', () => {
+      // Logic for opening recommended jobs can go here
+      console.log('Matches clicked');
+    });
+  }
 
-  // Setup password toggles
   setupPasswordToggles();
 }
 
@@ -303,13 +305,12 @@ function setupPasswordToggles() {
   const togglePassword = (toggleId, inputId) => {
     const toggle = document.getElementById(toggleId);
     const input = document.getElementById(inputId);
-    
+
     if (toggle && input) {
       toggle.addEventListener('click', () => {
         const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
         input.setAttribute('type', type);
-        
-        // Update icon
+
         const icon = toggle.querySelector('svg');
         if (type === 'text') {
           icon.innerHTML = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
@@ -328,6 +329,8 @@ function setupPasswordToggles() {
 function showAuthPage(page) {
   loginPage.style.display = page === 'login' ? 'flex' : 'none';
   signupPage.style.display = page === 'signup' ? 'flex' : 'none';
+  consentPage.style.display = page === 'consent' ? 'flex' : 'none';
+  rolesPage.style.display = page === 'roles' ? 'flex' : 'none';
   authContainer.style.display = 'flex';
   appContent.style.display = 'none';
 }
@@ -352,6 +355,299 @@ function clearSession() {
   localStorage.removeItem(OFFLINE_QUEUE_KEY);
 }
 
+// ================= ONBOARDING FUNCTIONS =================
+function setupOnboarding() {
+  const agree = document.getElementById('agreeCommunity');
+  const continueBtn = document.getElementById('consentContinueBtn');
+
+  if (agree && continueBtn) {
+    agree.addEventListener('change', () => {
+      continueBtn.disabled = !agree.checked;
+    });
+  }
+
+  if (continueBtn) {
+    continueBtn.addEventListener('click', () => {
+      showAuthPage('roles');
+    });
+  }
+
+  const skipBtn = document.getElementById('consentSkipBtn');
+  if (skipBtn) {
+    skipBtn.addEventListener('click', async () => {
+      await saveCommunityConsent(false);
+      showAuthPage('roles');
+    });
+  }
+
+  const roleInput = document.getElementById('roleInput');
+  const addRoleBtn = document.getElementById('addRoleBtn');
+  const rolesFinishBtn = document.getElementById('rolesFinishBtn');
+
+  if (addRoleBtn) addRoleBtn.addEventListener('click', addRoleChip);
+  if (roleInput) {
+    roleInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); addRoleChip(); }
+    });
+  }
+
+  if (rolesFinishBtn) {
+    rolesFinishBtn.addEventListener('click', async () => {
+      const session = await getSession();
+      if (!session) return;
+      await saveRoles(selectedRoles);
+      await markOnboardingComplete(session.user.id);
+      showAppContent();
+      updateProfileSection(session.user.email);
+      await renderAll();
+    });
+  }
+}
+
+function beginOnboarding(userId) {
+  const agree = document.getElementById('agreeCommunity');
+  const continueBtn = document.getElementById('consentContinueBtn');
+  if (agree) agree.checked = false;
+  if (continueBtn) continueBtn.disabled = true;
+
+  selectedRoles = [];
+  renderRoleChips();
+
+  authContainer.style.display = 'flex';
+  appContent.style.display = 'none';
+  showAuthPage('consent');
+}
+
+function addRoleChip() {
+  const input = document.getElementById('roleInput');
+  const value = input.value.trim();
+  if (!value) return;
+  if (selectedRoles.includes(value)) { input.value = ''; return; }
+  selectedRoles.push(value);
+  input.value = '';
+  renderRoleChips();
+}
+
+function renderRoleChips() {
+  const container = document.getElementById('roleChips');
+  if (!container) return;
+  if (selectedRoles.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = selectedRoles.map((role, i) => `
+    <span class="role-chip">
+      ${role}
+      <button type="button" class="chip-remove" data-index="${i}">×</button>
+    </span>
+  `).join('');
+  container.querySelectorAll('.chip-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedRoles.splice(parseInt(btn.dataset.index), 1);
+      renderRoleChips();
+    });
+  });
+}
+
+async function saveCommunityConsent(accepted) {
+  const session = await getSession();
+  if (!session) return;
+  const userId = session.user.id;
+
+  try {
+    await chrome.storage.local.set({
+      [`community_consent_${userId}`]: {
+        accepted,
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (e) {
+    console.warn('Could not save consent locally:', e);
+  }
+
+  if (isOnline()) {
+    try {
+      await supabase.from('profiles').upsert({
+        id: userId,
+        community_consent: accepted,
+        updated_at: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn('Could not sync consent to Supabase:', e);
+    }
+  }
+}
+
+async function saveRoles(roles) {
+  const session = await getSession();
+  if (!session) return;
+  const userId = session.user.id;
+  
+  const rolesString = roles.length > 0 ? roles.join(', ') : null;
+
+  try {
+    await chrome.storage.local.set({
+      [`user_roles_${userId}`]: roles
+    });
+  } catch (e) {
+    console.warn('Could not save roles locally:', e);
+  }
+
+  if (isOnline()) {
+    try {
+      await supabase.from('profiles').upsert({
+        id: userId,
+        target_role: rolesString,
+        updated_at: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn('Could not sync roles to Supabase:', e);
+    }
+  }
+}
+
+async function isOnboardingComplete(userId) {
+  try {
+    const result = await chrome.storage.local.get(ONBOARDING_KEY);
+    const state = result[ONBOARDING_KEY] || {};
+    return state[userId] === true;
+  } catch (e) {
+    console.warn('Could not read onboarding state:', e);
+    return false;
+  }
+}
+
+async function markOnboardingComplete(userId) {
+  try {
+    const result = await chrome.storage.local.get(ONBOARDING_KEY);
+    const state = result[ONBOARDING_KEY] || {};
+    state[userId] = true;
+    await chrome.storage.local.set({ [ONBOARDING_KEY]: state });
+  } catch (e) {
+    console.warn('Could not save onboarding state:', e);
+  }
+}
+
+// ================= SAVED RESUMES FUNCTIONS =================
+async function fetchSavedResumes() {
+  const session = await getSession();
+  if (!session) return;
+
+  const selectEl = document.getElementById('savedResumeSelect');
+  const sectionEl = document.getElementById('savedResumesSection');
+  if (!selectEl || !sectionEl) return;
+
+  // 1. Check locally cached jobs first
+  let localJobs = [];
+  try {
+    const result = await chrome.storage.local.get(LOCAL_JOBS_KEY);
+    localJobs = result[LOCAL_JOBS_KEY] || [];
+  } catch (e) {
+    console.warn('Could not read local jobs', e);
+  }
+
+  // 2. If online, fetch directly from Supabase
+  let remoteJobs = [];
+  if (isOnline()) {
+    try {
+      const { data, error } = await supabase
+        .from('job_applications')
+        .select('resume_filename, resume_data')
+        .eq('user_id', session.user.id)
+        .not('resume_filename', 'is', null)
+        .not('resume_data', 'is', null);
+
+      if (!error && data) {
+        remoteJobs = data;
+      }
+    } catch (e) {
+      console.warn('Could not fetch remote resumes', e);
+    }
+  }
+
+  // 3. Combine and find unique resumes
+  const allJobs = [...remoteJobs, ...localJobs];
+  const uniqueResumes = [];
+  const seenNames = new Set();
+
+  allJobs.forEach(job => {
+    if (job.resume_filename && job.resume_data && !seenNames.has(job.resume_filename)) {
+      seenNames.add(job.resume_filename);
+      uniqueResumes.push({
+        filename: job.resume_filename,
+        data: job.resume_data
+      });
+    }
+  });
+
+  // 4. Render the dropdown if we found any
+  if (uniqueResumes.length > 0) {
+    sectionEl.style.display = 'block';
+    
+    // Keep current selection if valid
+    const currentVal = selectEl.value;
+    selectEl.innerHTML = '<option value="">-- Upload a new resume below --</option>';
+    
+    uniqueResumes.forEach(resume => {
+      const option = document.createElement('option');
+      option.value = resume.filename;
+      option.textContent = `📄 ${resume.filename}`;
+      option.dataset.resumeData = resume.data;
+      selectEl.appendChild(option);
+    });
+
+    if (currentVal && uniqueResumes.some(r => r.filename === currentVal)) {
+      selectEl.value = currentVal;
+    }
+  } else {
+    sectionEl.style.display = 'none';
+  }
+}
+
+function setupSavedResumeSelect() {
+  const selectEl = document.getElementById('savedResumeSelect');
+  const dropArea = document.getElementById('fileDropArea');
+  const fileInput = document.getElementById('resumeUpload');
+  const fileNameDisplay = document.getElementById('fileNameDisplay');
+
+  if (!selectEl) return;
+
+  selectEl.addEventListener('change', (e) => {
+    const selectedOption = e.target.options[e.target.selectedIndex];
+    
+    if (e.target.value) {
+      savedResumeData = {
+        filename: selectedOption.value,
+        text: selectedOption.dataset.resumeData
+      };
+      
+      fileNameDisplay.textContent = `📄 ${savedResumeData.filename} (From History)`;
+      fileNameDisplay.style.display = 'block';
+      
+      fileInput.value = '';
+      
+      dropArea.style.opacity = '0.5';
+      dropArea.style.pointerEvents = 'none';
+    } else {
+      savedResumeData = null;
+      fileNameDisplay.style.display = 'none';
+      fileNameDisplay.textContent = '';
+      
+      dropArea.style.opacity = '1';
+      dropArea.style.pointerEvents = 'auto';
+    }
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length > 0) {
+      selectEl.value = '';
+      savedResumeData = null;
+      dropArea.style.opacity = '1';
+      dropArea.style.pointerEvents = 'auto';
+    }
+  });
+}
+
 // ================= JOB TRACKING FUNCTIONS =================
 function setupJobEventListeners() {
   document.getElementById('jobForm').addEventListener('submit', handleJobFormSubmit);
@@ -359,11 +655,20 @@ function setupJobEventListeners() {
 
 async function handleJobFormSubmit(e) {
   e.preventDefault();
-  
+
   const session = await getSession();
   if (!session) {
     showAuthPage('login');
     return;
+  }
+
+  let userRoles = '';
+  try {
+    const localRoles = await chrome.storage.local.get(`user_roles_${session.user.id}`);
+    const rolesArray = localRoles[`user_roles_${session.user.id}`] || [];
+    userRoles = rolesArray.join(', ');
+  } catch (e) {
+    console.warn('Could not retrieve roles', e);
   }
 
   const formData = {
@@ -378,20 +683,25 @@ async function handleJobFormSubmit(e) {
     application_expectation: parseInt(document.getElementById('expectationSlider').value),
     resume_filename: '',
     resume_data: '',
-    user_id: session.user.id
+    user_id: session.user.id,
+    community_role: userRoles
   };
 
-  // Handle resume upload
-  const resumeFile = document.getElementById('resumeUpload').files[0];
-  if (resumeFile) {
-    try {
-      const resumeData = await extractTextFromPDF(resumeFile);
-      formData.resume_filename = resumeData.filename;
-      formData.resume_data = resumeData.text;
-    } catch (error) {
-      console.error('Error extracting text from PDF:', error);
-      alert('Error processing resume PDF. Please try again.');
-      return;
+  if (savedResumeData) {
+    formData.resume_filename = savedResumeData.filename;
+    formData.resume_data = savedResumeData.text;
+  } else {
+    const resumeFile = document.getElementById('resumeUpload').files[0];
+    if (resumeFile) {
+      try {
+        const resumeData = await extractTextFromPDF(resumeFile);
+        formData.resume_filename = resumeData.filename;
+        formData.resume_data = resumeData.text;
+      } catch (error) {
+        console.error('Error extracting text from PDF:', error);
+        alert('Error processing resume PDF. Please try again.');
+        return;
+      }
     }
   }
 
@@ -412,10 +722,18 @@ async function handleJobFormSubmit(e) {
 
   e.target.reset();
   clearFile();
-  // Reset slider to default
   document.getElementById('expectationSlider').value = 3;
   document.getElementById('expectationValue').textContent = '3';
-  
+
+  savedResumeData = null;
+  const selectEl = document.getElementById('savedResumeSelect');
+  if (selectEl) selectEl.value = '';
+  const dropArea = document.getElementById('fileDropArea');
+  if (dropArea) {
+    dropArea.style.opacity = '1';
+    dropArea.style.pointerEvents = 'auto';
+  }
+
   await renderAll();
 }
 
@@ -426,17 +744,17 @@ async function extractTextFromPDF(file) {
       try {
         const pdfjsLib = window['pdfjs-dist/build/pdf'];
         pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('pdfjs/pdf.worker.min.js');
-        
+
         const typedArray = new Uint8Array(event.target.result);
         const pdf = await pdfjsLib.getDocument(typedArray).promise;
-        
+
         let text = '';
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const content = await page.getTextContent();
           text += content.items.map(item => item.str).join(' ') + '\n';
         }
-        
+
         resolve({
           filename: file.name,
           text: text
@@ -466,9 +784,6 @@ async function fetchJobs() {
   let remoteJobs = [];
   const localJobs = await getLocalJobs();
 
-  console.log('Fetching jobs for user:', session.user.id);
-  console.log('Local jobs count:', localJobs.length);
-
   if (isOnline()) {
     try {
       const { data, error } = await supabase
@@ -477,29 +792,24 @@ async function fetchJobs() {
         .eq('user_id', session.user.id)
         .order('date_applied', { ascending: false });
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-      
+      if (error) throw error;
       remoteJobs = data || [];
-      console.log('Remote jobs fetched:', remoteJobs.length);
-      
     } catch (error) {
       console.error('Error fetching remote jobs:', error);
     }
   }
 
-  // Filter local jobs to only include current user's jobs
   const userLocalJobs = localJobs.filter(job => job.user_id === session.user.id);
-  console.log('User local jobs:', userLocalJobs.length);
 
-  const allJobs = [...remoteJobs, ...userLocalJobs].sort((a, b) => 
+  const allJobs = [...remoteJobs, ...userLocalJobs].sort((a, b) =>
     new Date(b.date_applied) - new Date(a.date_applied)
   );
-  
-  console.log('Total jobs after merge:', allJobs.length);
+
   currentJobs = allJobs;
+  
+  // Update Match count (placeholder logic)
+  if (matchCount) matchCount.textContent = currentJobs.length;
+  
   return allJobs;
 }
 
@@ -539,8 +849,8 @@ async function updateJobField(id, field, value) {
 async function renderAll() {
   await fetchJobs();
   updateStats();
-  refreshMatchCount();
   await renderApplicationsList();
+  await fetchSavedResumes();
   updateSyncStatus();
 }
 
@@ -555,45 +865,14 @@ function updateStats() {
   offerCount.textContent = offers;
 }
 
-let lastMatchFetchAt = 0;
-
-async function refreshMatchCount() {
-  if (!matchCount) return;
-  const now = Date.now();
-  if (now - lastMatchFetchAt < 60000 && matchCount.textContent !== '—') return;
-
-  const session = await getSession();
-  const token = session?.access_token;
-  if (!token) {
-    matchCount.textContent = '—';
-    return;
-  }
-
-  lastMatchFetchAt = now;
-  try {
-    const response = await fetch(`${API_BASE}/api/recommendation`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!response.ok) {
-      matchCount.textContent = '—';
-      return;
-    }
-    const data = await response.json();
-    matchCount.textContent = String(data.count ?? 0);
-  } catch (error) {
-    console.error('Recommendation count failed:', error);
-    matchCount.textContent = '—';
-  }
-}
-
 async function renderApplicationsList() {
   const jobs = currentJobs || [];
   const filterSelect = document.getElementById('filterSelect');
   const filterValue = filterSelect.value;
-  
+
   let filteredJobs = jobs;
-  
-  switch(filterValue) {
+
+  switch (filterValue) {
     case 'interviewed':
       filteredJobs = jobs.filter(job => job.interviewed);
       break;
@@ -633,11 +912,10 @@ async function renderApplicationsList() {
 function createApplicationCard(job) {
   const appCard = document.createElement('div');
   appCard.className = 'application-card';
-  
-  // Calculate progress
+
   const progress = calculateProgress(job);
   const statusBadges = generateStatusBadges(job);
-  
+
   appCard.innerHTML = `
     <div class="app-card-header">
       <div>
@@ -646,40 +924,38 @@ function createApplicationCard(job) {
       </div>
       <div class="app-date">${formatDate(job.date_applied)}</div>
     </div>
-    
-    <!-- Follow-up Progress -->
+
     <div class="follow-up-progress">
       <div class="progress-bar">
         <div class="progress-fill" style="width: ${progress.percentage}%"></div>
       </div>
       <div class="progress-text">${progress.completed}/3 milestones completed</div>
     </div>
-    
-    <!-- Quick Follow-up Actions -->
+
     <div class="follow-up-actions">
       <div class="follow-up-item">
-        <input type="checkbox" 
-               class="follow-up-checkbox" 
+        <input type="checkbox"
+               class="follow-up-checkbox"
                id="interviewed_${job.id || job.local_id}"
                ${job.interviewed ? 'checked' : ''}
                data-id="${job.id || job.local_id}"
                data-field="interviewed">
         <label class="follow-up-label" for="interviewed_${job.id || job.local_id}">Interviewed</label>
       </div>
-      
+
       <div class="follow-up-item">
-        <input type="checkbox" 
-               class="follow-up-checkbox" 
+        <input type="checkbox"
+               class="follow-up-checkbox"
                id="offered_${job.id || job.local_id}"
                ${job.offered ? 'checked' : ''}
                data-id="${job.id || job.local_id}"
                data-field="offered">
         <label class="follow-up-label" for="offered_${job.id || job.local_id}">Got Offer</label>
       </div>
-      
+
       <div class="follow-up-item">
-        <input type="checkbox" 
-               class="follow-up-checkbox" 
+        <input type="checkbox"
+               class="follow-up-checkbox"
                id="hired_${job.id || job.local_id}"
                ${job.got_job ? 'checked' : ''}
                data-id="${job.id || job.local_id}"
@@ -687,16 +963,14 @@ function createApplicationCard(job) {
         <label class="follow-up-label" for="hired_${job.id || job.local_id}">Hired</label>
       </div>
     </div>
-    
-    <!-- Status Summary -->
+
     <div class="app-card-footer">
       <div class="app-status">
         ${statusBadges}
       </div>
       <div class="app-mood">${getMoodEmoji(job.mood)}</div>
     </div>
-    
-    <!-- Additional Actions -->
+
     <div class="app-actions">
       <button class="action-btn add-note" data-id="${job.id || job.local_id}">
         Add Note
@@ -706,45 +980,39 @@ function createApplicationCard(job) {
       </button>
     </div>
   `;
-  
-  // Add event listeners for checkboxes
+
   const checkboxes = appCard.querySelectorAll('.follow-up-checkbox');
   checkboxes.forEach(checkbox => {
     checkbox.addEventListener('change', function() {
       const id = this.getAttribute('data-id');
       const field = this.getAttribute('data-field');
       const value = this.checked;
-      
-      // Show loading state
+
       this.disabled = true;
-      
+
       updateJobField(id, field, value).then(() => {
-        // Re-enable checkbox
         this.disabled = false;
-        
-        // Show success feedback
         showUpdateFeedback(this, 'Updated!');
       }).catch(() => {
         this.disabled = false;
-        this.checked = !value; // Revert if failed
+        this.checked = !value;
       });
     });
   });
-  
-  // Add event listeners for action buttons
+
   const addNoteBtn = appCard.querySelector('.add-note');
   const viewDetailsBtn = appCard.querySelector('.view-details');
-  
+
   addNoteBtn.addEventListener('click', function() {
     const jobId = this.getAttribute('data-id');
     showNoteModal(jobId);
   });
-  
+
   viewDetailsBtn.addEventListener('click', function() {
     const jobId = this.getAttribute('data-id');
     showJobDetails(jobId);
   });
-  
+
   return appCard;
 }
 
@@ -752,7 +1020,7 @@ function calculateProgress(job) {
   const milestones = ['interviewed', 'offered', 'got_job'];
   const completed = milestones.filter(milestone => job[milestone]).length;
   const percentage = (completed / milestones.length) * 100;
-  
+
   return {
     completed,
     total: milestones.length,
@@ -762,31 +1030,30 @@ function calculateProgress(job) {
 
 function generateStatusBadges(job) {
   let badges = '';
-  
+
   if (job.interviewed) {
     badges += '<span class="status-badge status-interview">Interviewed</span>';
   }
-  
+
   if (job.offered) {
     badges += '<span class="status-badge status-offer">Offer</span>';
   }
-  
+
   if (job.got_job) {
     badges += '<span class="status-badge status-hired">Hired</span>';
   }
-  
+
   if (!job.interviewed && !job.offered && !job.got_job) {
     badges += '<span class="status-badge status-pending">Pending</span>';
   }
-  
+
   return badges;
 }
 
 function showUpdateFeedback(element, message) {
   const originalColor = element.style.accentColor;
   element.style.accentColor = '#22c55e';
-  
-  // Create feedback tooltip
+
   const tooltip = document.createElement('div');
   tooltip.textContent = message;
   tooltip.style.cssText = `
@@ -799,13 +1066,13 @@ function showUpdateFeedback(element, message) {
     z-index: 1000;
     pointer-events: none;
   `;
-  
+
   const rect = element.getBoundingClientRect();
   tooltip.style.left = (rect.left + rect.width/2 - 20) + 'px';
   tooltip.style.top = (rect.top - 25) + 'px';
-  
+
   document.body.appendChild(tooltip);
-  
+
   setTimeout(() => {
     element.style.accentColor = originalColor;
     tooltip.remove();
@@ -815,7 +1082,7 @@ function showUpdateFeedback(element, message) {
 function showNoteModal(jobId) {
   const job = currentJobs.find(j => (j.id || j.local_id) === jobId);
   if (!job) return;
-  
+
   const note = prompt(`Add a note for ${job.company} - ${job.role}:`, job.notes || '');
   if (note !== null) {
     updateJobField(jobId, 'notes', note);
@@ -825,7 +1092,7 @@ function showNoteModal(jobId) {
 function showJobDetails(jobId) {
   const job = currentJobs.find(j => (j.id || j.local_id) === jobId);
   if (!job) return;
-  
+
   const details = `
 Company: ${job.company}
 Role: ${job.role}
@@ -837,7 +1104,7 @@ Offer Received: ${job.offered ? 'Yes' : 'No'}
 Hired: ${job.got_job ? 'Yes' : 'No'}
 ${job.notes ? `Notes: ${job.notes}` : ''}
   `.trim();
-  
+
   alert(details);
 }
 
@@ -848,7 +1115,7 @@ function formatDate(dateString) {
 }
 
 function getMoodEmoji(mood) {
-  switch(mood) {
+  switch (mood) {
     case 'happy': return '😊';
     case 'sad': return '😢';
     case 'angry': return '😠';
@@ -859,7 +1126,7 @@ function getMoodEmoji(mood) {
 
 function renderAnalytics() {
   const jobs = currentJobs || [];
-  
+
   if (jobs.length === 0) {
     document.getElementById('jobsPerDayChart').style.display = 'none';
     avgExpectation.textContent = '0';
@@ -868,12 +1135,10 @@ function renderAnalytics() {
   }
 
   document.getElementById('jobsPerDayChart').style.display = 'block';
-  
-  // Calculate average expectation
+
   const avgExp = jobs.reduce((sum, job) => sum + (job.application_expectation || 3), 0) / jobs.length;
   avgExpectation.textContent = avgExp.toFixed(1);
 
-  // Calculate success rate (percentage of applications that led to interviews)
   const successCount = jobs.filter(job => job.interviewed).length;
   const successPercentage = jobs.length > 0 ? (successCount / jobs.length * 100).toFixed(1) : 0;
   successRate.textContent = `${successPercentage}%`;
@@ -884,7 +1149,7 @@ function renderAnalytics() {
 function renderJobsPerDayChart() {
   const jobs = currentJobs || [];
   const counts = {};
-  
+
   jobs.forEach(job => {
     if (job.date_applied) {
       counts[job.date_applied] = (counts[job.date_applied] || 0) + 1;
@@ -895,12 +1160,11 @@ function renderJobsPerDayChart() {
   const values = dates.map(date => counts[date]);
 
   const ctx = document.getElementById('jobsPerDayChart').getContext('2d');
-  
-  // Destroy existing chart if it exists
+
   if (window.jobsPerDayChartInstance) {
     window.jobsPerDayChartInstance.destroy();
   }
-  
+
   window.jobsPerDayChartInstance = new Chart(ctx, {
     type: 'line',
     data: {
@@ -923,9 +1187,7 @@ function renderJobsPerDayChart() {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: {
-          display: false
-        },
+        legend: { display: false },
         tooltip: {
           backgroundColor: 'rgba(5, 37, 37, 0.9)',
           titleColor: '#e67600',
@@ -936,23 +1198,13 @@ function renderJobsPerDayChart() {
       },
       scales: {
         x: {
-          grid: {
-            color: 'rgba(255, 255, 255, 0.1)'
-          },
-          ticks: {
-            color: '#a0aec0',
-            maxTicksLimit: 6
-          }
+          grid: { color: 'rgba(255, 255, 255, 0.1)' },
+          ticks: { color: '#a0aec0', maxTicksLimit: 6 }
         },
         y: {
           beginAtZero: true,
-          grid: {
-            color: 'rgba(255, 255, 255, 0.1)'
-          },
-          ticks: {
-            color: '#a0aec0',
-            stepSize: 1
-          }
+          grid: { color: 'rgba(255, 255, 255, 0.1)' },
+          ticks: { color: '#a0aec0', stepSize: 1 }
         }
       }
     }
@@ -967,23 +1219,19 @@ function formatChartDate(dateString) {
 // ================= STORAGE FUNCTIONS =================
 async function saveToLocal(jobData) {
   const localJobs = await getLocalJobs();
-  // Make sure we're saving with the correct user_id
   const jobWithUser = {
     ...jobData,
     local_id: 'local_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
   };
-  
+
   localJobs.push(jobWithUser);
   await chrome.storage.local.set({ [LOCAL_JOBS_KEY]: localJobs });
-  console.log('Saved job locally:', jobWithUser.local_id);
 }
 
 async function getLocalJobs() {
   try {
     const result = await chrome.storage.local.get(LOCAL_JOBS_KEY);
-    const jobs = result[LOCAL_JOBS_KEY] || [];
-    console.log('Retrieved local jobs:', jobs.length);
-    return jobs;
+    return result[LOCAL_JOBS_KEY] || [];
   } catch (error) {
     console.error('Error getting local jobs:', error);
     return [];
@@ -1038,7 +1286,7 @@ function isOnline() {
 function updateSyncStatus() {
   const statusElement = document.getElementById('syncStatus');
   const statusText = document.getElementById('syncStatusText');
-  
+
   if (!isOnline()) {
     statusElement.className = 'sync-indicator sync-offline';
     statusText.textContent = 'Offline';
