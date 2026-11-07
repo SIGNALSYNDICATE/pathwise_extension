@@ -32,6 +32,8 @@ const userEmail = document.getElementById('userEmail');
 const totalApplications = document.getElementById('totalApplications');
 const interviewCount = document.getElementById('interviewCount');
 const offerCount = document.getElementById('offerCount');
+const matchCount = document.getElementById('matchCount');
+const matchesStat = document.getElementById('matchesStat');
 
 // Analytics elements
 const avgExpectation = document.getElementById('avgExpectation');
@@ -46,6 +48,7 @@ const ONBOARDING_KEY = 'onboarding_state';
 // Global variables
 let currentJobs = [];
 let selectedRoles = [];
+let savedResumeData = null;
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
@@ -57,6 +60,7 @@ async function initializeApp() {
   setupJobEventListeners();
   setupTabNavigation();
   setupFileUpload();
+  setupSavedResumeSelect();
   setupSlider();
   setupFilter();
   setupOnboarding();
@@ -286,6 +290,13 @@ function setupAuthEventListeners() {
   document.getElementById('openAppBtn').addEventListener('click', () => {
     window.open('https://job-dash-ashy.vercel.app/', '_blank');
   });
+
+  if (matchesStat) {
+    matchesStat.addEventListener('click', () => {
+      // Logic for opening recommended jobs can go here
+      console.log('Matches clicked');
+    });
+  }
 
   setupPasswordToggles();
 }
@@ -517,6 +528,126 @@ async function markOnboardingComplete(userId) {
   }
 }
 
+// ================= SAVED RESUMES FUNCTIONS =================
+async function fetchSavedResumes() {
+  const session = await getSession();
+  if (!session) return;
+
+  const selectEl = document.getElementById('savedResumeSelect');
+  const sectionEl = document.getElementById('savedResumesSection');
+  if (!selectEl || !sectionEl) return;
+
+  // 1. Check locally cached jobs first
+  let localJobs = [];
+  try {
+    const result = await chrome.storage.local.get(LOCAL_JOBS_KEY);
+    localJobs = result[LOCAL_JOBS_KEY] || [];
+  } catch (e) {
+    console.warn('Could not read local jobs', e);
+  }
+
+  // 2. If online, fetch directly from Supabase
+  let remoteJobs = [];
+  if (isOnline()) {
+    try {
+      const { data, error } = await supabase
+        .from('job_applications')
+        .select('resume_filename, resume_data')
+        .eq('user_id', session.user.id)
+        .not('resume_filename', 'is', null)
+        .not('resume_data', 'is', null);
+
+      if (!error && data) {
+        remoteJobs = data;
+      }
+    } catch (e) {
+      console.warn('Could not fetch remote resumes', e);
+    }
+  }
+
+  // 3. Combine and find unique resumes
+  const allJobs = [...remoteJobs, ...localJobs];
+  const uniqueResumes = [];
+  const seenNames = new Set();
+
+  allJobs.forEach(job => {
+    if (job.resume_filename && job.resume_data && !seenNames.has(job.resume_filename)) {
+      seenNames.add(job.resume_filename);
+      uniqueResumes.push({
+        filename: job.resume_filename,
+        data: job.resume_data
+      });
+    }
+  });
+
+  // 4. Render the dropdown if we found any
+  if (uniqueResumes.length > 0) {
+    sectionEl.style.display = 'block';
+    
+    // Keep current selection if valid
+    const currentVal = selectEl.value;
+    selectEl.innerHTML = '<option value="">-- Upload a new resume below --</option>';
+    
+    uniqueResumes.forEach(resume => {
+      const option = document.createElement('option');
+      option.value = resume.filename;
+      option.textContent = `📄 ${resume.filename}`;
+      option.dataset.resumeData = resume.data;
+      selectEl.appendChild(option);
+    });
+
+    if (currentVal && uniqueResumes.some(r => r.filename === currentVal)) {
+      selectEl.value = currentVal;
+    }
+  } else {
+    sectionEl.style.display = 'none';
+  }
+}
+
+function setupSavedResumeSelect() {
+  const selectEl = document.getElementById('savedResumeSelect');
+  const dropArea = document.getElementById('fileDropArea');
+  const fileInput = document.getElementById('resumeUpload');
+  const fileNameDisplay = document.getElementById('fileNameDisplay');
+
+  if (!selectEl) return;
+
+  selectEl.addEventListener('change', (e) => {
+    const selectedOption = e.target.options[e.target.selectedIndex];
+    
+    if (e.target.value) {
+      savedResumeData = {
+        filename: selectedOption.value,
+        text: selectedOption.dataset.resumeData
+      };
+      
+      fileNameDisplay.textContent = `📄 ${savedResumeData.filename} (From History)`;
+      fileNameDisplay.style.display = 'block';
+      
+      fileInput.value = '';
+      
+      dropArea.style.opacity = '0.5';
+      dropArea.style.pointerEvents = 'none';
+    } else {
+      savedResumeData = null;
+      fileNameDisplay.style.display = 'none';
+      fileNameDisplay.textContent = '';
+      
+      dropArea.style.opacity = '1';
+      dropArea.style.pointerEvents = 'auto';
+    }
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length > 0) {
+      selectEl.value = '';
+      savedResumeData = null;
+      dropArea.style.opacity = '1';
+      dropArea.style.pointerEvents = 'auto';
+    }
+  });
+}
+
 // ================= JOB TRACKING FUNCTIONS =================
 function setupJobEventListeners() {
   document.getElementById('jobForm').addEventListener('submit', handleJobFormSubmit);
@@ -556,16 +687,21 @@ async function handleJobFormSubmit(e) {
     community_role: userRoles
   };
 
-  const resumeFile = document.getElementById('resumeUpload').files[0];
-  if (resumeFile) {
-    try {
-      const resumeData = await extractTextFromPDF(resumeFile);
-      formData.resume_filename = resumeData.filename;
-      formData.resume_data = resumeData.text;
-    } catch (error) {
-      console.error('Error extracting text from PDF:', error);
-      alert('Error processing resume PDF. Please try again.');
-      return;
+  if (savedResumeData) {
+    formData.resume_filename = savedResumeData.filename;
+    formData.resume_data = savedResumeData.text;
+  } else {
+    const resumeFile = document.getElementById('resumeUpload').files[0];
+    if (resumeFile) {
+      try {
+        const resumeData = await extractTextFromPDF(resumeFile);
+        formData.resume_filename = resumeData.filename;
+        formData.resume_data = resumeData.text;
+      } catch (error) {
+        console.error('Error extracting text from PDF:', error);
+        alert('Error processing resume PDF. Please try again.');
+        return;
+      }
     }
   }
 
@@ -588,6 +724,15 @@ async function handleJobFormSubmit(e) {
   clearFile();
   document.getElementById('expectationSlider').value = 3;
   document.getElementById('expectationValue').textContent = '3';
+
+  savedResumeData = null;
+  const selectEl = document.getElementById('savedResumeSelect');
+  if (selectEl) selectEl.value = '';
+  const dropArea = document.getElementById('fileDropArea');
+  if (dropArea) {
+    dropArea.style.opacity = '1';
+    dropArea.style.pointerEvents = 'auto';
+  }
 
   await renderAll();
 }
@@ -639,9 +784,6 @@ async function fetchJobs() {
   let remoteJobs = [];
   const localJobs = await getLocalJobs();
 
-  console.log('Fetching jobs for user:', session.user.id);
-  console.log('Local jobs count:', localJobs.length);
-
   if (isOnline()) {
     try {
       const { data, error } = await supabase
@@ -650,28 +792,24 @@ async function fetchJobs() {
         .eq('user_id', session.user.id)
         .order('date_applied', { ascending: false });
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
+      if (error) throw error;
       remoteJobs = data || [];
-      console.log('Remote jobs fetched:', remoteJobs.length);
-
     } catch (error) {
       console.error('Error fetching remote jobs:', error);
     }
   }
 
   const userLocalJobs = localJobs.filter(job => job.user_id === session.user.id);
-  console.log('User local jobs:', userLocalJobs.length);
 
   const allJobs = [...remoteJobs, ...userLocalJobs].sort((a, b) =>
     new Date(b.date_applied) - new Date(a.date_applied)
   );
 
-  console.log('Total jobs after merge:', allJobs.length);
   currentJobs = allJobs;
+  
+  // Update Match count (placeholder logic)
+  if (matchCount) matchCount.textContent = currentJobs.length;
+  
   return allJobs;
 }
 
@@ -712,6 +850,7 @@ async function renderAll() {
   await fetchJobs();
   updateStats();
   await renderApplicationsList();
+  await fetchSavedResumes();
   updateSyncStatus();
 }
 
@@ -1087,15 +1226,12 @@ async function saveToLocal(jobData) {
 
   localJobs.push(jobWithUser);
   await chrome.storage.local.set({ [LOCAL_JOBS_KEY]: localJobs });
-  console.log('Saved job locally:', jobWithUser.local_id);
 }
 
 async function getLocalJobs() {
   try {
     const result = await chrome.storage.local.get(LOCAL_JOBS_KEY);
-    const jobs = result[LOCAL_JOBS_KEY] || [];
-    console.log('Retrieved local jobs:', jobs.length);
-    return jobs;
+    return result[LOCAL_JOBS_KEY] || [];
   } catch (error) {
     console.error('Error getting local jobs:', error);
     return [];

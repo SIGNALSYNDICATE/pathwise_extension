@@ -241,18 +241,30 @@ body, .body-container {
 /* Quick Stats */
 .quick-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  padding: 16px 20px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 16px 12px;
   background: rgba(255, 255, 255, 0.03);
 }
 
 .stat-card {
   background: rgba(255, 255, 255, 0.05);
   border-radius: 12px;
-  padding: 16px;
+  padding: 12px 6px;
   text-align: center;
   border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-card-button {
+  appearance: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  width: 100%;
+}
+
+.stat-card-button:hover {
+  border-color: #e67600;
 }
 
 .stat-number {
@@ -1175,106 +1187,42 @@ body, .body-container {
   }
 }
 
-/* ===== Onboarding: Community Consent + Role Selection ===== */
-.consent-body,
-.roles-body {
-  padding: 16px 20px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+/* ===== Saved Resumes Dropdown ===== */
+.saved-resumes-section {
+  margin-bottom: 16px;
 }
 
-.consent-intro {
-  font-size: 13px;
-  line-height: 1.5;
+.saved-resume-label {
+  display: block;
+  font-size: 12px;
   color: #a0aec0;
-  margin: 0;
+  margin-bottom: 6px;
+  font-weight: 500;
 }
 
-.consent-benefits {
-  list-style: none;
+.saved-resume-select {
+  width: 100%;
   padding: 12px 14px;
-  margin: 0;
-  background: rgba(230, 118, 0, 0.08);
-  border: 1px solid rgba(230, 118, 0, 0.25);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 12px;
   color: #e2e8f0;
-}
-
-.consent-check {
-  font-size: 12px;
-  align-items: flex-start;
-  line-height: 1.4;
-}
-
-.btn-skip {
-  background: none;
-  border: none;
-  color: #a0aec0;
-  font-size: 12px;
-  cursor: pointer;
-  text-decoration: underline;
-  padding: 4px;
-}
-
-.btn-auth-wide:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.roles-input-row {
-  display: flex;
-  gap: 8px;
-}
-
-.roles-input-row .input-extra-wide {
-  flex: 1;
-}
-
-.btn-add-role {
-  padding: 0 16px;
-  background: #e67600;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.btn-add-role:hover {
-  background: #c96600;
-}
-
-.role-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-height: 24px;
-}
-
-.role-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: rgba(230, 118, 0, 0.15);
-  border: 1px solid rgba(230, 118, 0, 0.4);
-  color: #e67600;
-  padding: 4px 8px;
-  border-radius: 12px;
-  font-size: 11px;
-}
-
-.chip-remove {
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
   font-size: 13px;
-  line-height: 1;
-  padding: 0;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23a0aec0%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 10px;
+}
+
+.saved-resume-select:focus {
+  border-color: #e67600;
+}
+
+.saved-resume-select option {
+  background: #1a202c;
+  color: #e2e8f0;
 }
