@@ -30,7 +30,7 @@
       <h1 class="auth-title">Welcome Back</h1>
       <p class="auth-subtitle">Sign in to your account</p>
     </div>
-    
+
     <form id="loginForm" class="auth-form">
       <div class="input-group-wide">
         <div class="input-icon">
@@ -93,7 +93,7 @@
       <h1 class="auth-title">Create Account</h1>
       <p class="auth-subtitle">Start your job search journey</p>
     </div>
-    
+
     <form id="signupForm" class="auth-form">
       <div class="input-group-wide">
         <div class="input-icon">
@@ -156,6 +156,79 @@
         <p>Already have an account? <a href="#" id="showLogin" class="auth-link">Sign in</a></p>
       </div>
     </form>
+  </div>
+
+  <!-- ===== Community Consent Page ===== -->
+  <div id="consentPage" class="auth-page">
+    <div class="auth-header">
+      <div class="auth-logo">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+          <circle cx="9" cy="7" r="4"></circle>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+        </svg>
+      </div>
+      <h1 class="auth-title">Join Your Community</h1>
+      <p class="auth-subtitle">Get ahead together</p>
+    </div>
+
+    <div class="consent-body">
+      <p class="consent-intro">
+        Joining a community unlocks <strong>real-time trending jobs</strong> shared by people
+        applying to the same roles as you. See what's hot <em>right now</em> — not weeks later.
+      </p>
+
+      <ul class="consent-benefits">
+        <li>🔥 Real-time trending jobs within your community</li>
+        <li>👥 See jobs other community members are applying to</li>
+        <li>📈 Shared insights on what's working</li>
+        <li>🤝 Get discovered by peers in your field</li>
+      </ul>
+
+      <label class="terms-checkbox consent-check">
+        <input type="checkbox" id="agreeCommunity" required>
+        <span class="checkmark"></span>
+        I agree to join the community and share my application activity with members
+      </label>
+
+      <button type="button" id="consentContinueBtn" class="btn-auth-wide" disabled>
+        <span class="btn-text">Join Community</span>
+      </button>
+      <button type="button" id="consentSkipBtn" class="btn-skip">Skip for now</button>
+    </div>
+  </div>
+
+  <!-- ===== Role Selection Page ===== -->
+  <div id="rolesPage" class="auth-page">
+    <div class="auth-header">
+      <div class="auth-logo">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 7h-4V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"></path>
+          <path d="M10 7V5h4v2"></path>
+        </svg>
+      </div>
+      <h1 class="auth-title">Your Target Roles</h1>
+      <p class="auth-subtitle">Pick the roles you're pursuing</p>
+    </div>
+
+    <div class="roles-body">
+      <p class="consent-intro">
+        We'll show you jobs being applied to by community members in these roles.
+        You can change this anytime in settings.
+      </p>
+
+      <div class="roles-input-row">
+        <input type="text" id="roleInput" class="input-extra-wide" placeholder="e.g. Frontend Developer">
+        <button type="button" id="addRoleBtn" class="btn-add-role">Add</button>
+      </div>
+
+      <div id="roleChips" class="role-chips"></div>
+
+      <button type="button" id="rolesFinishBtn" class="btn-auth-wide">
+        <span class="btn-text">Finish Setup</span>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -311,25 +384,25 @@
         </form>
       </section>
 
-  <!-- Applications Section -->
-<section id="followUpSection" class="content-section">
-  <div class="applications-header">
-    <h3>Your Applications</h3>
-    <div class="view-options">
-      <select id="filterSelect" class="filter-select">
-        <option value="all">All Applications</option>
-        <option value="interviewed">Interviewed</option>
-        <option value="offered">Offers</option>
-        <option value="hired">Hired</option>
-        <option value="pending">Pending Follow-up</option>
-      </select>
-    </div>
-  </div>
-  
-  <div class="applications-list" id="applicationsList">
-    <!-- Applications will be loaded here -->
-  </div>
-</section>
+      <!-- Applications Section -->
+      <section id="followUpSection" class="content-section">
+        <div class="applications-header">
+          <h3>Your Applications</h3>
+          <div class="view-options">
+            <select id="filterSelect" class="filter-select">
+              <option value="all">All Applications</option>
+              <option value="interviewed">Interviewed</option>
+              <option value="offered">Offers</option>
+              <option value="hired">Hired</option>
+              <option value="pending">Pending Follow-up</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="applications-list" id="applicationsList">
+          <!-- Applications will be loaded here -->
+        </div>
+      </section>
 
       <!-- Analytics Section -->
       <section id="analyticsSection" class="content-section">
